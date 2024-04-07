@@ -1,4 +1,5 @@
 #include "dispatchers.hpp"
+#include <hyprland/src/desktop/DesktopTypes.hpp>
 
 static const std::string overviewWorksapceName = "OVERVIEW";
 static std::string workspaceNameBackup;
@@ -24,7 +25,7 @@ void switchToLayoutWithoutReleaseData(std::string layout) {
     hycov_log(ERR, "Unknown layout!");
 }
 
-bool want_auto_fullscren(CWindow *pWindow) {
+bool want_auto_fullscreen(CWindow *pWindow) {
 	int nodeNumInTargetWorkspace = 1;
 
 	if(!pWindow) {
@@ -111,7 +112,7 @@ CWindow *direction_select(std::string arg){
         
 		auto *pMonitor = g_pCompositor->getMonitorFromID(pWindow->m_iMonitorID);
 
-		if (!((isCrossMonitor(arg) && pWindow->m_iMonitorID != pTempClient->m_iMonitorID && !g_pCompositor->isWorkspaceSpecial(pTempClient->m_iWorkspaceID) && pWindow->m_iWorkspaceID == pMonitor->activeWorkspace ) || pTempClient->m_iWorkspaceID == pWindow->m_iWorkspaceID)) {
+		if (!((isCrossMonitor(arg) && pWindow->m_iMonitorID != pTempClient->m_iMonitorID && !pTempClient->m_pWorkspace->m_bIsSpecialWorkspace && pWindow->m_pWorkspace == pMonitor->activeWorkspace ) || pTempClient->m_pWorkspace == pWindow->m_pWorkspace)) {
 			continue;
 		}
 			
@@ -250,7 +251,7 @@ CWindow *get_circle_next_window (std::string arg) {
     for (auto &w : g_pCompositor->m_vWindows)
     {
 		CWindow *pWindow = w.get();
-        if (pTempClient->m_iWorkspaceID !=pWindow->m_iWorkspaceID || pWindow->isHidden() || !pWindow->m_bIsMapped || pWindow->m_bFadingOut || pWindow->m_bIsFullscreen)
+        if (pTempClient->m_pWorkspace !=pWindow->m_pWorkspace || pWindow->isHidden() || !pWindow->m_bIsMapped || pWindow->m_bFadingOut || pWindow->m_bIsFullscreen)
             continue;
 		if (next_ready)
 			return 	pWindow;
@@ -261,7 +262,7 @@ CWindow *get_circle_next_window (std::string arg) {
     for (auto &w : g_pCompositor->m_vWindows)
     {
 		CWindow *pWindow = w.get();
-        if (pTempClient->m_iWorkspaceID !=pWindow->m_iWorkspaceID || pWindow->isHidden() || !pWindow->m_bIsMapped || pWindow->m_bFadingOut || pWindow->m_bIsFullscreen)
+        if (pTempClient->m_pWorkspace !=pWindow->m_pWorkspace || pWindow->isHidden() || !pWindow->m_bIsMapped || pWindow->m_bFadingOut || pWindow->m_bIsFullscreen)
             continue;
 		return pWindow;
     }
@@ -319,7 +320,7 @@ void dispatch_enteroverview(std::string arg)
 	}
 
 	const auto pMonitor = g_pCompositor->m_pLastMonitor;
-	if(pMonitor->specialWorkspaceID != 0)
+	if(pMonitor->activeSpecialWorkspaceID() != 0)
 		pMonitor->setSpecialWorkspace(nullptr);
 
 	//force display all workspace window,ignore `only_active_worksapce` and `only_active_monitor`
@@ -343,7 +344,7 @@ void dispatch_enteroverview(std::string arg)
 	//ali clients exit fullscreen status before enter overview
 	CWindow *pFullscreenWindow;
 	CWindow *pActiveWindow = g_pCompositor->m_pLastWindow;
-	CWorkspace *pActiveWorkspace;
+ 	PHLWORKSPACE pActiveWorkspace;
 	CMonitor *pActiveMonitor;
 
 	bool isNoShouldTileWindow = true;
@@ -351,7 +352,7 @@ void dispatch_enteroverview(std::string arg)
     for (auto &w : g_pCompositor->m_vWindows)
     {
 		CWindow *pWindow = w.get();
-        if (pWindow->isHidden() || !pWindow->m_bIsMapped || pWindow->m_bFadingOut || g_pCompositor->isWorkspaceSpecial(pWindow->m_iWorkspaceID))
+        if (pWindow->isHidden() || !pWindow->m_bIsMapped || pWindow->m_bFadingOut || pWindow->m_pWorkspace->m_bIsSpecialWorkspace)
             continue;
 		isNoShouldTileWindow = false;
 	}
@@ -386,10 +387,10 @@ void dispatch_enteroverview(std::string arg)
 
 	//change workspace name to OVERVIEW
 	pActiveMonitor	= g_pCompositor->m_pLastMonitor;
-	pActiveWorkspace = g_pCompositor->getWorkspaceByID(pActiveMonitor->activeWorkspace);
+	pActiveWorkspace =pActiveMonitor->activeWorkspace;
 	workspaceNameBackup = pActiveWorkspace->m_szName;
 	workspaceIdBackup = pActiveWorkspace->m_iID;
-	g_pCompositor->renameWorkspace(pActiveMonitor->activeWorkspace,overviewWorksapceName);
+	g_pCompositor->renameWorkspace(pActiveMonitor->activeWorkspaceID(),overviewWorksapceName);
 
 	//Preserve window focus
 	if(pActiveWindow){
@@ -398,7 +399,7 @@ void dispatch_enteroverview(std::string arg)
 	} else { // when no window is showed in current window,find from other workspace to focus(exclude special workspace)
     	for (auto &w : g_pCompositor->m_vWindows) {
 			CWindow *pWindow = w.get();
-    	    if (g_pCompositor->isWorkspaceSpecial(pWindow->m_iWorkspaceID) || pWindow->isHidden() || !pWindow->m_bIsMapped || pWindow->m_bFadingOut || pWindow->m_bIsFullscreen)
+    	    if (pWindow->m_pWorkspace->m_bIsSpecialWorkspace || pWindow->isHidden() || !pWindow->m_bIsMapped || pWindow->m_bFadingOut || pWindow->m_bIsFullscreen)
     	        continue;
 			g_pCompositor->focusWindow(pWindow); // find the last window that is in same workspace with the remove window
     	}
@@ -416,6 +417,9 @@ void dispatch_enteroverview(std::string arg)
 		g_hycov_pSpawnHook->hook();
 	}
 
+	//disable float
+	g_hycov_pToggleActiveFloatingHook->hook();
+
 	g_hycov_pCKeybindManager_changeGroupActiveHook->hook();
 	g_hycov_pCKeybindManager_toggleGroupHook->hook();
 	g_hycov_pCKeybindManager_moveOutOfGroupHook->hook();
@@ -430,7 +434,7 @@ void dispatch_leaveoverview(std::string arg)
 	}
 
 	const auto pMonitor = g_pCompositor->m_pLastMonitor;
-	if(pMonitor->specialWorkspaceID != 0)
+	if(pMonitor->activeSpecialWorkspaceID() != 0)
 		pMonitor->setSpecialWorkspace(nullptr);
 	
 	// get default layout
@@ -454,6 +458,9 @@ void dispatch_leaveoverview(std::string arg)
 	if(g_hycov_disable_spawn) {
 		g_hycov_pSpawnHook->unhook();
 	}
+
+	//enable float
+	g_hycov_pToggleActiveFloatingHook->unhook();
 
 	g_hycov_pCKeybindManager_changeGroupActiveHook->unhook();
 	g_hycov_pCKeybindManager_toggleGroupHook->unhook();
@@ -544,7 +551,7 @@ void dispatch_leaveoverview(std::string arg)
 
 		if(pActiveWindow->m_bIsFloating) {
 			g_pCompositor->changeWindowZOrder(pActiveWindow, true);
-		} else if(g_hycov_auto_fullscreen && want_auto_fullscren(pActiveWindow)) { // if enale auto_fullscreen after exit overview
+		} else if(g_hycov_auto_fullscreen && want_auto_fullscreen(pActiveWindow)) { // if enale auto_fullscreen after exit overview
 			g_pCompositor->setWindowFullscreen(pActiveWindow,true,FULLSCREEN_MAXIMIZED);
 		}
 	}
@@ -558,7 +565,7 @@ void dispatch_leaveoverview(std::string arg)
 				continue;
 			}
 
-			if (n.pWindow != g_pCompositor->m_pLastWindow && n.pWindow->m_iWorkspaceID == g_pCompositor->m_pLastWindow->m_iWorkspaceID)
+			if (n.pWindow != g_pCompositor->m_pLastWindow && n.pWindow->m_pWorkspace == g_pCompositor->m_pLastWindow->m_pWorkspace)
 			{
 				continue;
 			}	
