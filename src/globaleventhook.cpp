@@ -185,10 +185,10 @@ static void hkCWindow_onUnmap(void* thisptr) {
   auto nodeNumInSameMonitor = 0;
   auto nodeNumInSameWorkspace = 0;
 	for (auto &n : g_hycov_OvGridLayout->m_lOvGridNodesData) {
-		if(n.pWindow->m_iMonitorID == g_pCompositor->m_pLastMonitor->ID && !g_pCompositor->isWorkspaceSpecial(n.pWindow->m_iWorkspaceID)) {
+		if(n.pWindow->m_iMonitorID == g_pCompositor->m_pLastMonitor->ID && !n.pWindow->m_pWorkspace->m_bIsSpecialWorkspace) {
 			nodeNumInSameMonitor++;
 		}
-		if(n.pWindow->m_iWorkspaceID == g_pCompositor->m_pLastMonitor->activeWorkspace) {
+		if(n.pWindow->m_pWorkspace == g_pCompositor->m_pLastMonitor->activeWorkspace) {
 			nodeNumInSameWorkspace++;
 		}
 	}
@@ -220,6 +220,11 @@ static void hkMoveActiveToWorkspace(std::string args) {
 static void hkSpawn(std::string args) {
   // just log a message and do nothing, mean the original function is disabled
   hycov_log(LOG,"Spawn hook toggle");
+}
+
+static void hkToggleActiveFloating(std::string args) {
+  // just log a message and do nothing, mean the original function is disabled
+  hycov_log(LOG,"Float hook toggle");
 }
 
 static void hkStartAnim(void* thisptr,bool in, bool left, bool instant = false) {
@@ -256,14 +261,11 @@ static void hkFullscreenActive(std::string args) {
   if (!pWindow)
         return;
 
-  if (g_pCompositor->isWorkspaceSpecial(pWindow->m_iWorkspaceID))
-        return;
-
-  if (g_hycov_isOverView && want_auto_fullscren(pWindow) && !g_hycov_auto_fullscreen) {
+  if (g_hycov_isOverView && want_auto_fullscreen(pWindow) && !g_hycov_auto_fullscreen) {
     hycov_log(LOG,"FullscreenActive toggle leave overview with fullscreen");
     dispatch_toggleoverview("internalToggle");
     g_pCompositor->setWindowFullscreen(pWindow, !pWindow->m_bIsFullscreen, args == "1" ? FULLSCREEN_MAXIMIZED : FULLSCREEN_FULL);
-  } else if (g_hycov_isOverView && (!want_auto_fullscren(pWindow) || g_hycov_auto_fullscreen)) {
+  } else if (g_hycov_isOverView && (!want_auto_fullscreen(pWindow) || g_hycov_auto_fullscreen)) {
     hycov_log(LOG,"FullscreenActive toggle leave overview without fullscreen");
     dispatch_toggleoverview("internalToggle");
   } else {
@@ -328,7 +330,7 @@ void hkCKeybindManager_changeGroupActive(std::string args) {
     pNode->pWindow = pTargetWindow;
     pNode->pGroupPrevWindow = pTargetWindow->getGroupPrevious();
     pNode->pGroupNextWindow = pTargetWindow->m_sGroupData.pNextWindow;
-    pNode->pWindow->m_iWorkspaceID = pNode->workspaceID;
+    pNode->pWindow->workspaceID() == pNode->workspaceID;
     
     PWINDOW->setGroupCurrent(pTargetWindow);
     g_hycov_OvGridLayout->applyNodeDataToWindow(pNode);
@@ -358,7 +360,7 @@ void registerGlobalEventHook()
 
   // hook function of Gridlayout Remove a node from tiled list
   g_hycov_pCWindow_onUnmap = HyprlandAPI::createFunctionHook(PHANDLE, (void*)&CWindow::onUnmap, (void*)&hkCWindow_onUnmap);
-
+  g_hycov_pOnSwipeBeginHook = HyprlandAPI::createFunctionHook(PHANDLE, (void*)&CInputManager::onSwipeBegin, (void*)&hkOnSwipeBegin);
   // hook function of workspace change animation start
   g_hycov_pStartAnimHook = HyprlandAPI::createFunctionHook(PHANDLE, (void*)&CWorkspace::startAnim, (void*)&hkStartAnim);
   g_hycov_pStartAnimHook->hook();
@@ -402,6 +404,9 @@ void registerGlobalEventHook()
   //hook function of fullscreenActive
   static const auto FullscreenActiveMethods = HyprlandAPI::findFunctionsByName(PHANDLE, "fullscreenActive");
   g_hycov_pFullscreenActiveHook = HyprlandAPI::createFunctionHook(PHANDLE, FullscreenActiveMethods[0].address, (void*)&hkFullscreenActive);
+
+  static const auto FloatMethods = HyprlandAPI::findFunctionsByName(PHANDLE, "toggleActiveFloating");
+  g_hycov_pToggleActiveFloatingHook = HyprlandAPI::createFunctionHook(PHANDLE, FloatMethods[0].address, (void*)&hkToggleActiveFloating);
 
   //register pEvent hook
   if(g_hycov_enable_hotarea){
